@@ -22,9 +22,9 @@ from sklearn.metrics import (
     calinski_harabasz_score
 )
 
-# --------------------------------------------------
-# CONFIGURATION
-# --------------------------------------------------
+# =========================================================
+# PAGE CONFIGURATION
+# =========================================================
 st.set_page_config(
     page_title="ML Capstone Studio",
     page_icon="📊",
@@ -36,27 +36,31 @@ DATA_DIR = ROOT / "data"
 
 st.markdown("""
 <style>
-.block-container {padding-top: 1.5rem; max-width: 1200px;}
+.block-container {
+    max-width: 1250px;
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+}
 .hero {
-    padding: 28px;
+    padding: 30px;
     border-radius: 18px;
     background: linear-gradient(120deg, #14213d, #315b82);
     color: white;
-    margin-bottom: 20px;
+    margin-bottom: 22px;
 }
-.hero h1 {color: white;}
+.hero h1 { color: white; }
 div[data-testid="stMetric"] {
     border: 1px solid #d9e2ec;
     border-radius: 12px;
-    padding: 12px;
+    padding: 14px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 
-# --------------------------------------------------
-# DATA LOADING
-# --------------------------------------------------
+# =========================================================
+# SHARED UTILITIES
+# =========================================================
 @st.cache_data
 def load_csv(filename):
     path = DATA_DIR / filename
@@ -67,24 +71,17 @@ def load_csv(filename):
             if DATA_DIR.exists() else []
         )
         raise FileNotFoundError(
-            f"Cannot find {filename}. CSV files found: {available}"
+            f"Cannot find {filename} in {DATA_DIR}. "
+            f"Available CSV files: {available}"
         )
 
     if path.stat().st_size == 0:
-        raise ValueError(
-            f"{filename} is empty. Upload the original CSV to the data folder."
-        )
+        raise ValueError(f"{filename} is empty.")
 
-    try:
-        df = pd.read_csv(path)
-    except pd.errors.EmptyDataError:
-        raise ValueError(
-            f"{filename} contains no readable columns or rows. "
-            "Check the file in GitHub."
-        )
+    df = pd.read_csv(path)
 
-    if df.empty or len(df.columns) == 0:
-        raise ValueError(f"{filename} contains no usable data.")
+    if df.empty:
+        raise ValueError(f"{filename} has no data rows.")
 
     df.columns = df.columns.astype(str).str.strip()
 
@@ -94,7 +91,7 @@ def load_csv(filename):
     return df
 
 
-def clean_numeric(series):
+def numeric(series):
     return pd.to_numeric(
         series.astype(str)
         .str.replace(",", "", regex=False)
@@ -106,49 +103,59 @@ def clean_numeric(series):
     )
 
 
-def make_encoder():
+def encoder():
     try:
         return OneHotEncoder(
-            handle_unknown="ignore", sparse_output=False
+            handle_unknown="ignore",
+            sparse_output=False
         )
     except TypeError:
         return OneHotEncoder(
-            handle_unknown="ignore", sparse=False
+            handle_unknown="ignore",
+            sparse=False
         )
 
 
 def make_preprocessor(X, scale=True):
-    numeric = X.select_dtypes(include=np.number).columns.tolist()
-    categorical = X.select_dtypes(exclude=np.number).columns.tolist()
+    numeric_cols = X.select_dtypes(include=np.number).columns.tolist()
+    categorical_cols = X.select_dtypes(
+        exclude=np.number
+    ).columns.tolist()
 
     transformers = []
 
-    if numeric:
-        steps = [("imputer", SimpleImputer(strategy="median"))]
+    if numeric_cols:
+        steps = [
+            ("imputer", SimpleImputer(strategy="median"))
+        ]
+
         if scale:
             steps.append(("scaler", StandardScaler()))
 
         transformers.append((
-            "numeric", Pipeline(steps), numeric
+            "numeric", Pipeline(steps), numeric_cols
         ))
 
-    if categorical:
+    if categorical_cols:
         transformers.append((
             "categorical",
             Pipeline([
-                ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("encoder", make_encoder())
+                ("imputer", SimpleImputer(
+                    strategy="most_frequent"
+                )),
+                ("encoder", encoder())
             ]),
-            categorical
+            categorical_cols
         ))
 
-    return ColumnTransformer(transformers, remainder="drop")
+    return ColumnTransformer(
+        transformers,
+        remainder="drop"
+    )
 
 
-def numeric_inputs(X, prefix):
-    """Create input fields from the dataset's actual feature columns."""
+def input_form(X, prefix):
     values = {}
-
     left, right = st.columns(2)
 
     for i, col in enumerate(X.columns):
@@ -156,20 +163,28 @@ def numeric_inputs(X, prefix):
             series = X[col]
 
             if pd.api.types.is_numeric_dtype(series):
-                clean = pd.to_numeric(series, errors="coerce").dropna()
-                default = float(clean.median()) if not clean.empty else 0.0
+                clean = pd.to_numeric(
+                    series, errors="coerce"
+                ).dropna()
+
+                default = (
+                    float(clean.median())
+                    if not clean.empty else 0.0
+                )
 
                 values[col] = st.number_input(
-                    col.replace("_", " "),
+                    col.replace("_", " ").title(),
                     value=default,
                     key=f"{prefix}_{col}"
                 )
             else:
-                options = sorted(series.dropna().astype(str).unique().tolist())
+                options = sorted(
+                    series.dropna().astype(str).unique().tolist()
+                )
 
                 if options:
                     values[col] = st.selectbox(
-                        col.replace("_", " "),
+                        col.replace("_", " ").title(),
                         options,
                         key=f"{prefix}_{col}"
                     )
@@ -179,211 +194,266 @@ def numeric_inputs(X, prefix):
     return pd.DataFrame([values], columns=X.columns)
 
 
-def note(message):
-    st.info(message)
-
-
-# --------------------------------------------------
-# REGRESSION: KNN REGRESSOR
-# --------------------------------------------------
-@st.cache_resource
-def train_regression():
-    filename = next(
-        (
-            p.name for p in DATA_DIR.glob("*.csv")
-            if "".join(c.lower() for c in p.name if c.isalnum())
-            in {"cropyeilddatacsv", "cropyielddatacsv"}
-        ),
-        None
+def hero(title, subtitle):
+    st.markdown(
+        f'<div class="hero"><h1>{title}</h1>'
+        f'<p>{subtitle}</p></div>',
+        unsafe_allow_html=True
     )
 
-    if filename is None:
+
+# =========================================================
+# REGRESSION: CROP YIELD
+# =========================================================
+@st.cache_resource
+def train_regression():
+    candidates = [
+        p.name for p in DATA_DIR.glob("*.csv")
+        if "".join(
+            ch.lower() for ch in p.name if ch.isalnum()
+        ) in {
+            "cropyeilddatacsv",
+            "cropyielddatacsv"
+        }
+    ]
+
+    if not candidates:
         raise FileNotFoundError(
-            "Crop yield CSV not found in data/. Check its filename."
+            "Crop yield CSV not found in data/. "
+            "Check the exact filename."
         )
 
-    df = load_csv(filename)
+    df = load_csv(candidates[0])
 
     if "Yield" not in df.columns:
         raise ValueError(
-            f"Target 'Yield' not found. Columns: {df.columns.tolist()}"
+            f"Expected target 'Yield'. Found: {df.columns.tolist()}"
         )
 
-    df["Yield"] = clean_numeric(df["Yield"])
-    df = df.drop_duplicates().dropna(subset=["Yield"]).copy()
+    df["Yield"] = numeric(df["Yield"])
+    df = df.dropna(subset=["Yield"]).drop_duplicates()
 
-    # Exclude Production to avoid target leakage.
-    X = df.drop(
-        columns=[c for c in ["Yield", "Production"] if c in df.columns]
-    ).copy()
+    # Production can directly reveal yield and cause target leakage.
+    drop_cols = [
+        c for c in ["Yield", "Production"]
+        if c in df.columns
+    ]
+
+    X = df.drop(columns=drop_cols).copy()
     y = df["Yield"].astype(float)
 
-    for col, area in [
+    # Recreate the derived features if those were used in training.
+    for source, derived in [
         ("Fertilizer", "Fertilizer_per_Area"),
         ("Pesticide", "Pesticide_per_Area")
     ]:
-        if col in X.columns and "Area" in X.columns:
-            X[area] = X[col] / X["Area"].replace(0, np.nan)
+        if source in X.columns and "Area" in X.columns:
+            X[derived] = (
+                numeric(X[source]) /
+                numeric(X["Area"]).replace(0, np.nan)
+            )
+
+    X = X.drop(
+        columns=[
+            c for c in ["Fertilizer", "Pesticide"]
+            if c in X.columns
+        ],
+        errors="ignore"
+    )
 
     X = X.replace([np.inf, -np.inf], np.nan)
     X = X.dropna(axis=1, how="all")
     X = X.loc[:, X.nunique(dropna=False) > 1]
 
     if len(X) < 5:
-        raise ValueError("Not enough valid rows to train regression.")
+        raise ValueError("Not enough rows for regression.")
 
-    stratify = (
-        X["Season"]
-        if "Season" in X.columns
-        and X["Season"].value_counts().min() >= 2
-        else None
-    )
+    stratify = None
+    if "Season" in X.columns:
+        if X["Season"].value_counts().min() >= 2:
+            stratify = X["Season"]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42,
+        X, y,
+        test_size=0.2,
+        random_state=42,
         stratify=stratify
     )
 
+    k = min(5, len(X_train))
+
     model = Pipeline([
         ("preprocess", make_preprocessor(X, scale=True)),
-        ("model", KNeighborsRegressor(n_neighbors=min(5, len(X_train))))
+        ("model", KNeighborsRegressor(n_neighbors=k))
     ])
 
     model.fit(X_train, y_train)
-    predictions = model.predict(X_test)
+    pred = model.predict(X_test)
 
     metrics = {
-        "R²": r2_score(y_test, predictions),
-        "RMSE": np.sqrt(mean_squared_error(y_test, predictions)),
-        "MAE": mean_absolute_error(y_test, predictions)
+        "R²": r2_score(y_test, pred),
+        "RMSE": np.sqrt(mean_squared_error(y_test, pred)),
+        "MAE": mean_absolute_error(y_test, pred)
     }
 
-    return X, X_train, X_test, y_train, y_test, model, predictions, metrics
+    return X, X_train, X_test, y_train, y_test, model, pred, metrics
 
 
 def regression_page():
-    st.markdown(
-        '<div class="hero"><h1>🌾 Crop Yield Prediction</h1>'
-        '<p>K-Nearest Neighbors Regression</p></div>',
-        unsafe_allow_html=True
+    hero(
+        "🌾 Crop Yield Prediction",
+        "Estimate crop yield and understand the result."
     )
 
-    X, X_train, X_test, y_train, y_test, model, pred, metrics = (
-        train_regression()
-    )
+    (
+        X, X_train, X_test, y_train, y_test,
+        model, predictions, metrics
+    ) = train_regression()
 
-    a, b, c = st.columns(3)
-    a.metric("R² score", f"{metrics['R²']:.4f}")
-    b.metric("RMSE", f"{metrics['RMSE']:.3f}")
-    c.metric("MAE", f"{metrics['MAE']:.3f}")
+    st.subheader("Enter crop details")
+    sample = input_form(X, "crop")
 
-    st.subheader("1. Enter crop conditions")
-    sample = numeric_inputs(X, "crop")
+    if st.button("Predict Crop Yield", type="primary"):
+        st.session_state["crop_result"] = float(
+            model.predict(sample)[0]
+        )
+        st.session_state["crop_input"] = sample.copy()
 
-    if st.button("Predict crop yield", type="primary"):
-        result = float(model.predict(sample)[0])
-        st.session_state["crop_prediction"] = result
-
-    if "crop_prediction" in st.session_state:
+    if "crop_result" in st.session_state:
         st.success(
             f"Estimated crop yield: "
-            f"{st.session_state['crop_prediction']:,.3f}"
+            f"{st.session_state['crop_result']:,.3f}"
         )
 
-    tabs = st.tabs([
-        "Actual vs Predicted", "Residuals",
-        "Model Calculation", "Evaluation"
-    ])
-
-    with tabs[0]:
-        fig, ax = plt.subplots()
-        ax.scatter(y_test, pred, alpha=0.6)
-        lo = min(float(y_test.min()), float(np.min(pred)))
-        hi = max(float(y_test.max()), float(np.max(pred)))
-        ax.plot([lo, hi], [lo, hi], "--")
-        ax.set_xlabel("Actual yield")
-        ax.set_ylabel("Predicted yield")
-        ax.set_title("Actual vs Predicted Yield")
-        st.pyplot(fig)
-        plt.close(fig)
-
-        note(
-            "Dots closer to the dashed line indicate more accurate "
-            "predictions. Distance from the line indicates prediction error."
+        st.caption(
+            "Calculated using the K-Nearest Neighbors Regressor. "
+            "It finds similar training examples and combines "
+            "their known yields."
         )
 
-    with tabs[1]:
-        residuals = np.asarray(y_test) - pred
-        fig, ax = plt.subplots()
-        ax.scatter(pred, residuals, alpha=0.6)
-        ax.axhline(0, linestyle="--")
-        ax.set_xlabel("Predicted yield")
-        ax.set_ylabel("Residual: actual − predicted")
-        ax.set_title("Residual Analysis")
-        st.pyplot(fig)
-        plt.close(fig)
+        st.markdown("### How was the prediction calculated?")
 
-        note(
-            "Positive residuals mean the model predicted too low; "
-            "negative residuals mean it predicted too high."
-        )
+        chosen_input = st.session_state["crop_input"]
+        preprocess = model.named_steps["preprocess"]
 
-    with tabs[2]:
-        st.markdown("### How KNN calculates the prediction")
-
-        processed_train = model.named_steps["preprocess"].transform(X_train)
-        processed_sample = model.named_steps["preprocess"].transform(sample)
+        train_matrix = preprocess.transform(X_train)
+        input_matrix = preprocess.transform(chosen_input)
 
         distances = np.sqrt(
-            np.sum((processed_train - processed_sample) ** 2, axis=1)
+            np.sum(
+                (train_matrix - input_matrix) ** 2,
+                axis=1
+            )
         )
-        nearest = np.argsort(distances)[:model.named_steps["model"].n_neighbors]
+
+        k = model.named_steps["model"].n_neighbors
+        nearest = np.argsort(distances)[:k]
 
         details = pd.DataFrame({
             "Neighbor": np.arange(1, len(nearest) + 1),
             "Distance": distances[nearest],
-            "Actual training yield": y_train.iloc[nearest].to_numpy()
+            "Training yield": y_train.iloc[nearest].to_numpy()
         })
 
-        st.dataframe(details.round(4), use_container_width=True)
-
-        st.latex(
-            r"\hat{y}=\frac{1}{k}\sum_{i=1}^{k} y_i"
-        )
-        st.write(
-            "KNN finds the closest training examples after preprocessing. "
-            "Their yields are averaged to produce the prediction."
-        )
-
-    with tabs[3]:
         st.dataframe(
-            pd.DataFrame([metrics]).round(4),
+            details.round(4),
             use_container_width=True
         )
-        note(
-            "R² measures explained variation. RMSE penalizes large errors "
-            "more heavily, while MAE gives the average absolute error."
+
+        st.latex(r"\hat{y}=\frac{1}{k}\sum_{i=1}^{k}y_i")
+
+        st.write(
+            "The input is transformed using the same preprocessing "
+            "as the training data. The model finds the closest "
+            "training samples and averages their yields."
         )
 
+    st.divider()
+    st.subheader("Model evaluation")
 
-# --------------------------------------------------
-# CLASSIFICATION: GRADIENT BOOSTING
-# --------------------------------------------------
+    a, b, c = st.columns(3)
+    a.metric("R² Score", f"{metrics['R²']:.4f}")
+    b.metric("RMSE", f"{metrics['RMSE']:.3f}")
+    c.metric("MAE", f"{metrics['MAE']:.3f}")
+
+    left, right = st.columns(2)
+
+    with left:
+        st.markdown("#### Actual vs Predicted Yield")
+
+        fig, ax = plt.subplots()
+        ax.scatter(y_test, predictions, alpha=0.65)
+
+        low = min(float(y_test.min()), float(predictions.min()))
+        high = max(float(y_test.max()), float(predictions.max()))
+
+        ax.plot([low, high], [low, high], "--")
+        ax.set_xlabel("Actual yield")
+        ax.set_ylabel("Predicted yield")
+        ax.grid(alpha=0.2)
+
+        st.pyplot(fig)
+        plt.close(fig)
+
+        st.caption(
+            "Points closer to the dashed line represent "
+            "more accurate predictions."
+        )
+
+    with right:
+        st.markdown("#### Residual Analysis")
+
+        residuals = np.asarray(y_test) - predictions
+
+        fig, ax = plt.subplots()
+        ax.scatter(predictions, residuals, alpha=0.65)
+        ax.axhline(0, linestyle="--")
+        ax.set_xlabel("Predicted yield")
+        ax.set_ylabel("Actual − predicted")
+        ax.grid(alpha=0.2)
+
+        st.pyplot(fig)
+        plt.close(fig)
+
+        st.caption(
+            "Positive residuals indicate underprediction; "
+            "negative residuals indicate overprediction."
+        )
+
+    st.markdown("#### Evaluation metric interpretation")
+    st.write(
+        "**R²:** closer to 1 is generally better. "
+        "**RMSE:** penalizes larger errors. "
+        "**MAE:** average absolute prediction error. "
+        "RMSE and MAE are expressed in the target's units."
+    )
+
+
+# =========================================================
+# CLASSIFICATION: VEHICLE SIZE
+# =========================================================
 @st.cache_resource
 def train_classification():
     df = load_csv("cars.csv").drop_duplicates().copy()
 
-    if "Vehicle Size" not in df.columns:
+    target = "Vehicle Size"
+
+    if target not in df.columns:
         raise ValueError(
-            f"Target 'Vehicle Size' not found. Columns: {df.columns.tolist()}"
+            f"Expected target '{target}'. "
+            f"Found: {df.columns.tolist()}"
         )
 
-    df = df.dropna(subset=["Vehicle Size"])
-    y = df["Vehicle Size"].astype(str)
+    df = df.dropna(subset=[target])
+    y = df[target].astype(str)
 
     X = df.drop(
-        columns=[c for c in ["Vehicle Size", "Model"] if c in df.columns]
-    )
+        columns=[
+            c for c in [target, "Model"]
+            if c in df.columns
+        ]
+    ).copy()
+
     X = X.dropna(axis=1, how="all")
     X = X.loc[:, X.nunique(dropna=False) > 1]
 
@@ -393,7 +463,9 @@ def train_classification():
     stratify = y if y.value_counts().min() >= 2 else None
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42,
+        X, y,
+        test_size=0.2,
+        random_state=42,
         stratify=stratify
     )
 
@@ -403,165 +475,212 @@ def train_classification():
     ])
 
     model.fit(X_train, y_train)
-    pred = model.predict(X_test)
+    predictions = model.predict(X_test)
 
     metrics = {
-        "Accuracy": accuracy_score(y_test, pred),
-        "Precision (weighted)": precision_score(
-            y_test, pred, average="weighted", zero_division=0
+        "Accuracy": accuracy_score(y_test, predictions),
+        "Precision": precision_score(
+            y_test, predictions,
+            average="weighted", zero_division=0
         ),
-        "Recall (weighted)": recall_score(
-            y_test, pred, average="weighted", zero_division=0
+        "Recall": recall_score(
+            y_test, predictions,
+            average="weighted", zero_division=0
         ),
-        "F1 (weighted)": f1_score(
-            y_test, pred, average="weighted", zero_division=0
+        "F1 Score": f1_score(
+            y_test, predictions,
+            average="weighted", zero_division=0
         )
     }
 
-    return X, X_test, y_test, model, pred, metrics
+    return X, X_test, y_test, model, predictions, metrics
 
 
 def classification_page():
-    st.markdown(
-        '<div class="hero"><h1>🚘 Vehicle Classification</h1>'
-        '<p>Gradient Boosting Classifier</p></div>',
-        unsafe_allow_html=True
+    hero(
+        "🚘 Vehicle Classification",
+        "Enter vehicle details to estimate its category."
     )
 
-    X, X_test, y_test, model, pred, metrics = train_classification()
+    X, X_test, y_test, model, predictions, metrics = (
+        train_classification()
+    )
 
-    a, b, c, d = st.columns(4)
-    a.metric("Accuracy", f"{metrics['Accuracy']:.3f}")
-    b.metric("Precision", f"{metrics['Precision (weighted)']:.3f}")
-    c.metric("Recall", f"{metrics['Recall (weighted)']:.3f}")
-    d.metric("Weighted F1", f"{metrics['F1 (weighted)']:.3f}")
+    st.subheader("Enter vehicle details")
+    sample = input_form(X, "vehicle")
 
-    st.subheader("1. Enter vehicle details")
-    sample = numeric_inputs(X, "car")
+    if st.button("Predict Vehicle Category", type="primary"):
+        result = model.predict(sample)[0]
+        probabilities = model.predict_proba(sample)[0]
 
-    if st.button("Predict vehicle size", type="primary"):
-        st.session_state["car_prediction"] = model.predict(sample)[0]
-        try:
-            st.session_state["car_probabilities"] = model.predict_proba(sample)[0]
-        except Exception:
-            st.session_state["car_probabilities"] = None
+        st.session_state["vehicle_result"] = result
+        st.session_state["vehicle_probabilities"] = probabilities
+        st.session_state["vehicle_input"] = sample.copy()
 
-    if "car_prediction" in st.session_state:
+    if "vehicle_result" in st.session_state:
         st.success(
-            f"Predicted vehicle size: {st.session_state['car_prediction']}"
+            f"Predicted vehicle category: "
+            f"{st.session_state['vehicle_result']}"
         )
 
-        probabilities = st.session_state.get("car_probabilities")
-        if probabilities is not None:
-            classes = model.named_steps["model"].classes_
-            st.bar_chart(
-                pd.DataFrame({
-                    "Vehicle class": classes,
-                    "Probability": probabilities
-                }).set_index("Vehicle class")
-            )
+        st.caption(
+            "Calculated using the Gradient Boosting Classifier. "
+            "The model combines successive decision trees to "
+            "produce the final class prediction."
+        )
 
-    tabs = st.tabs([
-        "Confusion Matrix", "Class Metrics",
-        "Feature Importance", "How it Works"
-    ])
-
-    with tabs[0]:
         classes = model.named_steps["model"].classes_
-        cm = confusion_matrix(y_test, pred, labels=classes)
+        probabilities = st.session_state["vehicle_probabilities"]
+
+        st.markdown("### Prediction probabilities")
+
+        prob_df = pd.DataFrame({
+            "Category": classes,
+            "Probability": probabilities
+        }).set_index("Category")
+
+        st.bar_chart(prob_df)
+
+        st.caption(
+            "Probabilities indicate the model's estimated support "
+            "for each class; they are not guarantees of correctness."
+        )
+
+    st.divider()
+    st.subheader("Model evaluation")
+
+    cols = st.columns(4)
+    for col, (name, value) in zip(cols, metrics.items()):
+        col.metric(name, f"{value:.3f}")
+
+    left, right = st.columns(2)
+
+    classes = model.named_steps["model"].classes_
+    cm = confusion_matrix(y_test, predictions, labels=classes)
+
+    with left:
+        st.markdown("#### Confusion Matrix")
 
         fig, ax = plt.subplots()
-        im = ax.imshow(cm, cmap="Blues")
-        ax.set_xticks(range(len(classes)), labels=classes, rotation=25)
-        ax.set_yticks(range(len(classes)), labels=classes)
+        image = ax.imshow(cm, cmap="Blues")
+
+        ax.set_xticks(range(len(classes)))
+        ax.set_xticklabels(classes, rotation=30, ha="right")
+        ax.set_yticks(range(len(classes)))
+        ax.set_yticklabels(classes)
         ax.set_xlabel("Predicted")
         ax.set_ylabel("Actual")
-        ax.set_title("Confusion Matrix")
 
         for i in range(len(classes)):
             for j in range(len(classes)):
                 ax.text(j, i, cm[i, j], ha="center", va="center")
 
-        fig.colorbar(im, ax=ax)
+        fig.colorbar(image, ax=ax)
+        fig.tight_layout()
+
         st.pyplot(fig)
         plt.close(fig)
 
-        note(
-            "Diagonal cells are correct predictions. Off-diagonal cells "
-            "show which vehicle categories the model confused."
+        st.caption(
+            "The diagonal contains correct predictions. "
+            "Other cells indicate misclassified vehicles."
         )
 
-    with tabs[1]:
-        report = classification_report(
-            y_test, pred, output_dict=True, zero_division=0
+    with right:
+        st.markdown("#### Feature Importance")
+
+        fitted = model.named_steps["model"]
+        names = model.named_steps[
+            "preprocess"
+        ].get_feature_names_out()
+
+        importance = pd.DataFrame({
+            "Feature": names,
+            "Importance": fitted.feature_importances_
+        }).sort_values(
+            "Importance", ascending=False
+        ).head(12)
+
+        st.bar_chart(
+            importance.set_index("Feature")
         )
-        st.dataframe(pd.DataFrame(report).T.round(3))
 
-    with tabs[2]:
-        model_step = model.named_steps["model"]
-        transformed = model.named_steps["preprocess"]
-        try:
-            names = transformed.get_feature_names_out()
-            importance = model_step.feature_importances_
+        st.caption(
+            "Higher feature importance means the feature contributed "
+            "more to the fitted model's decisions. It does not prove "
+            "that the feature causes the outcome."
+        )
 
-            fi = pd.DataFrame({
-                "Feature": names,
-                "Importance": importance
-            }).sort_values("Importance", ascending=False).head(15)
+    st.markdown("#### Detailed classification report")
 
-            st.bar_chart(fi.set_index("Feature"))
-            st.dataframe(fi, use_container_width=True)
-        except Exception as e:
-            st.warning(f"Feature importance unavailable: {e}")
+    report = classification_report(
+        y_test, predictions,
+        output_dict=True,
+        zero_division=0
+    )
 
-    with tabs[3]:
-        st.markdown("""
-        **Gradient Boosting calculation**
-
-        1. The preprocessing pipeline fills missing values and encodes
-           categorical inputs.
-        2. A sequence of decision trees learns patterns in the training data.
-        3. Each successive tree helps correct errors made by earlier trees.
-        4. The combined model produces the predicted vehicle-size class.
-
-        **Accuracy** measures the fraction of correct predictions.
-        **Precision** measures prediction reliability.
-        **Recall** measures how many actual examples were identified.
-        **F1** balances precision and recall.
-        """)
+    st.dataframe(
+        pd.DataFrame(report).T.round(3),
+        use_container_width=True
+    )
 
 
-# --------------------------------------------------
-# CLUSTERING: AMAZON PRODUCTS
-# --------------------------------------------------
+# =========================================================
+# AMAZON PRODUCT CLUSTERING
+# =========================================================
+AMAZON_FEATURES = [
+    "actual_price",
+    "discounted_price",
+    "discount_percentage",
+    "rating",
+    "rating_count"
+]
+
+
 @st.cache_resource
-def prepare_amazon():
+def train_amazon():
     df = load_csv("amazon.csv").copy()
 
     required = [
-        "product_name", "category", "discounted_price",
-        "actual_price", "discount_percentage", "rating", "rating_count"
+        "product_name", "category",
+        "discounted_price", "actual_price",
+        "discount_percentage", "rating", "rating_count"
     ]
 
     missing = [c for c in required if c not in df.columns]
+
     if missing:
         raise ValueError(
-            f"Missing Amazon columns: {missing}. "
+            f"Amazon CSV is missing columns: {missing}. "
             f"Available columns: {df.columns.tolist()}"
         )
 
-    for col in [
-        "discounted_price", "actual_price",
-        "discount_percentage", "rating", "rating_count"
-    ]:
-        df[col] = clean_numeric(df[col])
+    for col in AMAZON_FEATURES:
+        df[col] = numeric(df[col])
 
+    df = df.reset_index(drop=True)
+
+    # Retain rows with usable product identity and feature values.
+    df = df.dropna(
+        subset=["product_name", "actual_price", "discounted_price"],
+    ).reset_index(drop=True)
+
+    if len(df) < 4:
+        raise ValueError("Not enough usable Amazon products.")
+
+    # Log-transform skewed price and review-count columns.
     features = pd.DataFrame({
-        "actual_price": np.log1p(df["actual_price"].clip(lower=0)),
-        "discounted_price": np.log1p(df["discounted_price"].clip(lower=0)),
-        "discount_percentage": df["discount_percentage"],
-        "rating": df["rating"],
-        "rating_count": np.log1p(df["rating_count"].clip(lower=0))
+        "Actual price": np.log1p(
+            df["actual_price"].clip(lower=0)
+        ),
+        "Discounted price": np.log1p(
+            df["discounted_price"].clip(lower=0)
+        ),
+        "Discount percentage": df["discount_percentage"],
+        "Rating": df["rating"],
+        "Review count": np.log1p(
+            df["rating_count"].clip(lower=0)
+        )
     })
 
     features = features.replace([np.inf, -np.inf], np.nan)
@@ -570,291 +689,478 @@ def prepare_amazon():
     scaler = StandardScaler()
     scaled = scaler.fit_transform(features)
 
-    return df, features, scaled, scaler
+    # Fit one deployable K-Means model on ALL usable products.
+    # This means every product can be assigned to a cluster.
+    k = min(4, max(2, int(np.sqrt(len(df) / 2))))
+    k = min(k, len(df) - 1)
 
+    kmeans = KMeans(
+        n_clusters=k,
+        random_state=42,
+        n_init=5
+    )
 
-@st.cache_resource
-def train_clusters():
-    df, features, scaled, scaler = prepare_amazon()
+    labels = kmeans.fit_predict(scaled)
 
-    # Cap K-Means training size to keep Streamlit Cloud responsive.
+    df["Cluster"] = labels
+
+    # Compare algorithms on a representative sample for metrics.
     rng = np.random.RandomState(42)
-    sample_size = min(len(df), 5000)
-    idx = np.sort(rng.choice(len(df), sample_size, replace=False))
-    sample_X = scaled[idx]
+    sample_size = min(len(df), 2000)
 
-    if len(sample_X) < 4:
-        raise ValueError("Not enough Amazon products for clustering.")
+    sample_indices = np.sort(
+        rng.choice(len(df), sample_size, replace=False)
+    )
 
+    sample_X = scaled[sample_indices]
     results = []
-    models = {}
+    cluster_models = {}
 
-    for k in [3, 4]:
-        km = KMeans(n_clusters=k, random_state=42, n_init=5)
-        labels = km.fit_predict(sample_X)
+    # Score K-Means on the sample using its own fit for fair comparison.
+    for sample_k in sorted(set([2, min(3, sample_size - 1), min(4, sample_size - 1)])):
+        if sample_k < 2 or sample_k >= sample_size:
+            continue
 
-        models[f"K-Means (k={k})"] = {
-            "model": km, "labels": labels, "indices": idx,
-            "X": sample_X
-        }
+        km = KMeans(
+            n_clusters=sample_k,
+            random_state=42,
+            n_init=5
+        )
+
+        sample_labels = km.fit_predict(sample_X)
+
+        if len(np.unique(sample_labels)) < 2:
+            continue
 
         results.append({
-            "Algorithm": f"K-Means (k={k})",
-            "Silhouette": silhouette_score(sample_X, labels),
-            "Davies-Bouldin": davies_bouldin_score(sample_X, labels),
-            "Calinski-Harabasz": calinski_harabasz_score(sample_X, labels)
+            "Algorithm": f"K-Means (k={sample_k})",
+            "Silhouette": silhouette_score(sample_X, sample_labels),
+            "Davies-Bouldin": davies_bouldin_score(
+                sample_X, sample_labels
+            ),
+            "Calinski-Harabasz": calinski_harabasz_score(
+                sample_X, sample_labels
+            )
         })
 
-    # Agglomerative clustering is fitted on the same representative sample.
-    agg = AgglomerativeClustering(n_clusters=3, linkage="ward")
-    agg_labels = agg.fit_predict(sample_X)
+        cluster_models[f"K-Means (k={sample_k})"] = km
 
-    models["Agglomerative (Ward, k=3)"] = {
-        "model": agg, "labels": agg_labels, "indices": idx,
-        "X": sample_X
-    }
+    # Agglomerative evaluation uses the same sample.
+    agg_k = min(3, sample_size - 1)
 
-    results.append({
-        "Algorithm": "Agglomerative (Ward, k=3)",
-        "Silhouette": silhouette_score(sample_X, agg_labels),
-        "Davies-Bouldin": davies_bouldin_score(sample_X, agg_labels),
-        "Calinski-Harabasz": calinski_harabasz_score(sample_X, agg_labels)
-    })
+    if agg_k >= 2:
+        agg = AgglomerativeClustering(
+            n_clusters=agg_k,
+            linkage="ward"
+        )
 
-    return df, features, scaled, scaler, models, pd.DataFrame(results)
+        agg_labels = agg.fit_predict(sample_X)
+
+        if len(np.unique(agg_labels)) >= 2:
+            results.append({
+                "Algorithm": f"Agglomerative (k={agg_k})",
+                "Silhouette": silhouette_score(
+                    sample_X, agg_labels
+                ),
+                "Davies-Bouldin": davies_bouldin_score(
+                    sample_X, agg_labels
+                ),
+                "Calinski-Harabasz": calinski_harabasz_score(
+                    sample_X, agg_labels
+                )
+            })
+
+    return (
+        df, features, scaled, scaler,
+        kmeans, labels, sample_X, pd.DataFrame(results)
+    )
 
 
 def clustering_page():
-    st.markdown(
-        '<div class="hero"><h1>🛍️ Amazon Product Segmentation</h1>'
-        '<p>Search products, explore clusters, and understand their profiles.</p></div>',
-        unsafe_allow_html=True
+    hero(
+        "🛍️ Amazon Product Explorer",
+        "Search a product, discover its segment, and explore the data."
     )
 
-    df, features, scaled, scaler, models, metrics = train_clusters()
+    (
+        df, features, scaled, scaler,
+        kmeans, labels, sample_X, comparison
+    ) = train_amazon()
 
-    selected = st.selectbox(
-        "Select clustering algorithm",
-        list(models.keys())
-    )
-    info = models[selected]
-    labels = info["labels"]
-    idx = info["indices"]
-    sample_df = df.iloc[idx].copy()
-    sample_df["Cluster"] = labels
+    st.subheader("Find a product")
 
-    row = metrics.set_index("Algorithm").loc[selected]
-
-    a, b, c = st.columns(3)
-    a.metric("Silhouette", f"{row['Silhouette']:.3f}")
-    b.metric("Davies–Bouldin", f"{row['Davies-Bouldin']:.3f}")
-    c.metric("Calinski–Harabasz", f"{row['Calinski-Harabasz']:.1f}")
-
-    note(
-        "Silhouette: higher is generally better. "
-        "Davies–Bouldin: lower is generally better. "
-        "Calinski–Harabasz: higher is generally better. "
-        "These metrics are guides, not proof of a perfect clustering."
+    query = st.text_input(
+        "Search by product name",
+        placeholder="Type a product name..."
     )
 
-    tabs = st.tabs([
-        "Product Search", "PCA Visualization",
-        "Cluster Profiles", "Algorithm Comparison", "How it Works"
-    ])
-
-    with tabs[0]:
-        query = st.text_input("Search Amazon product name")
-
+    if query.strip():
         matches = df[
             df["product_name"].astype(str).str.contains(
                 query, case=False, na=False
             )
-        ] if query.strip() else df.head(100)
+        ]
 
         if matches.empty:
-            st.warning("No matching products found.")
+            st.warning(
+                "No product matched that search. Try a shorter keyword."
+            )
+            selected_product = None
         else:
-            product = st.selectbox(
-                "Choose product",
+            selected_product = st.selectbox(
+                "Choose a matching product",
                 matches["product_name"].drop_duplicates().tolist()
             )
+    else:
+        selected_product = None
+        st.info("Enter a product name to explore its analysis.")
 
-            selected_row = df[df["product_name"] == product].iloc[0]
-            st.subheader(product)
+    if selected_product:
+        product_row = df[
+            df["product_name"] == selected_product
+        ].iloc[0]
 
-            cols = st.columns(4)
-            cols[0].metric(
-                "Selling price",
-                f"{selected_row['discounted_price']:,.2f}"
-                if pd.notna(selected_row["discounted_price"]) else "N/A"
-            )
-            cols[1].metric(
-                "Actual price",
-                f"{selected_row['actual_price']:,.2f}"
-                if pd.notna(selected_row["actual_price"]) else "N/A"
-            )
-            cols[2].metric(
-                "Discount",
-                f"{selected_row['discount_percentage']}%"
-            )
-            cols[3].metric(
-                "Rating",
-                str(selected_row["rating"])
-            )
+        product_index = product_row.name
+        cluster = int(labels[product_index])
 
-            locations = np.where(
-                sample_df["product_name"].to_numpy() == product
-            )[0]
+        st.divider()
+        st.subheader("Product analysis")
 
-            if len(locations):
-                cluster = int(labels[locations[0]])
-                st.success(f"Cluster assigned by {selected}: {cluster}")
-
-                similar = sample_df[
-                    sample_df["Cluster"] == cluster
-                ]
-                similar = similar[
-                    similar["product_name"] != product
-                ]
-
-                st.subheader("Products in the same cluster")
-                st.dataframe(
-                    similar[[
-                        "product_name", "category", "discounted_price",
-                        "actual_price", "discount_percentage",
-                        "rating", "rating_count"
-                    ]].head(15),
-                    use_container_width=True
-                )
-            else:
-                st.info(
-                    "This product was not included in the clustering sample. "
-                    "Try another product from the sample or reduce dataset size."
-                )
-
-    with tabs[1]:
-        pca = PCA(n_components=2, random_state=42)
-        coordinates = pca.fit_transform(info["X"])
-
-        fig, ax = plt.subplots()
-        scatter = ax.scatter(
-            coordinates[:, 0], coordinates[:, 1],
-            c=labels, cmap="tab10", alpha=0.65, s=16
+        st.success(
+            f"This product belongs to product segment {cluster + 1}."
         )
+
+        st.caption(
+            "The segment was calculated using K-Means clustering. "
+            "Products are grouped by their price, discount, rating, "
+            "and review-count patterns."
+        )
+
+        a, b, c, d = st.columns(4)
+
+        a.metric(
+            "Selling price",
+            f"{product_row['discounted_price']:,.2f}"
+        )
+        b.metric(
+            "Actual price",
+            f"{product_row['actual_price']:,.2f}"
+        )
+        c.metric(
+            "Discount",
+            f"{product_row['discount_percentage']:.1f}%"
+            if pd.notna(product_row["discount_percentage"])
+            else "N/A"
+        )
+        d.metric(
+            "Rating",
+            f"{product_row['rating']:.1f}"
+            if pd.notna(product_row["rating"])
+            else "N/A"
+        )
+
+        # Similar products from the same cluster.
+        similar = df[
+            (df["Cluster"] == cluster) &
+            (df["product_name"] != selected_product)
+        ].copy()
+
+        st.markdown("### Similar products")
+
+        display_cols = [
+            "product_name", "category",
+            "actual_price", "discounted_price",
+            "discount_percentage", "rating", "rating_count"
+        ]
+
+        st.dataframe(
+            similar[display_cols].head(10),
+            use_container_width=True
+        )
+
+        st.caption(
+            "These products share a cluster, which means their selected "
+            "attributes are similar. This is not necessarily a measure "
+            "of semantic similarity or purchase intent."
+        )
+
+        st.divider()
+        st.subheader("Visualizations")
+
+        # Price distribution.
+        left, right = st.columns(2)
+
+        with left:
+            st.markdown("#### Selling price distribution")
+
+            fig, ax = plt.subplots()
+            prices = df["discounted_price"].dropna()
+
+            ax.hist(prices, bins=25)
+            ax.axvline(
+                product_row["discounted_price"],
+                linestyle="--",
+                label="Selected product"
+            )
+
+            ax.set_xlabel("Discounted price")
+            ax.set_ylabel("Number of products")
+            ax.legend()
+
+            st.pyplot(fig)
+            plt.close(fig)
+
+            st.caption(
+                "The dashed line shows where this product's selling "
+                "price falls in the dataset."
+            )
+
+        with right:
+            st.markdown("#### Rating distribution")
+
+            fig, ax = plt.subplots()
+            ratings = df["rating"].dropna()
+
+            ax.hist(ratings, bins=10)
+            ax.axvline(
+                product_row["rating"],
+                linestyle="--",
+                label="Selected product"
+            )
+
+            ax.set_xlabel("Rating")
+            ax.set_ylabel("Number of products")
+            ax.legend()
+
+            st.pyplot(fig)
+            plt.close(fig)
+
+            st.caption(
+                "This compares the product's rating with other "
+                "products' ratings."
+            )
+
+        left, right = st.columns(2)
+
+        with left:
+            st.markdown("#### Discount distribution")
+
+            fig, ax = plt.subplots()
+            discounts = df["discount_percentage"].dropna()
+
+            ax.hist(discounts, bins=15)
+            ax.axvline(
+                product_row["discount_percentage"],
+                linestyle="--",
+                label="Selected product"
+            )
+
+            ax.set_xlabel("Discount percentage")
+            ax.set_ylabel("Number of products")
+            ax.legend()
+
+            st.pyplot(fig)
+            plt.close(fig)
+
+        with right:
+            st.markdown("#### Product counts by segment")
+
+            counts = df["Cluster"].value_counts().sort_index()
+            counts.index = [
+                f"Segment {i + 1}" for i in counts.index
+            ]
+
+            st.bar_chart(counts)
+
+        # PCA uses all scaled product rows and the labels from K-Means.
+        st.markdown("#### Product segment map")
+
+        pca = PCA(n_components=2, random_state=42)
+        coordinates = pca.fit_transform(scaled)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        ax.scatter(
+            coordinates[:, 0],
+            coordinates[:, 1],
+            c=labels,
+            cmap="tab10",
+            alpha=0.55,
+            s=15
+        )
+
+        selected_xy = coordinates[product_index]
+
+        ax.scatter(
+            selected_xy[0],
+            selected_xy[1],
+            marker="*",
+            s=250,
+            edgecolors="black",
+            label="Selected product"
+        )
+
         ax.set_xlabel("Principal Component 1")
         ax.set_ylabel("Principal Component 2")
-        ax.set_title(f"PCA Cluster Map: {selected}")
-        fig.colorbar(scatter, ax=ax, label="Cluster")
+        ax.set_title("Product Segments Visualized with PCA")
+        ax.legend()
+
         st.pyplot(fig)
         plt.close(fig)
 
-        st.write(
-            f"The first two PCA components preserve "
-            f"{pca.explained_variance_ratio_.sum() * 100:.1f}% "
-            "of the variance in the standardized features."
-        )
-        note(
-            "Each dot represents a product. Nearby points have similar "
-            "feature profiles in this 2D projection. PCA visualizes the "
-            "clusters; it does not create the cluster labels."
+        explained = pca.explained_variance_ratio_.sum() * 100
+
+        st.caption(
+            f"The first two PCA components preserve {explained:.1f}% "
+            "of the variance. Each point represents a product; the star "
+            "marks the selected product."
         )
 
-    with tabs[2]:
-        cols = [
-            "discounted_price", "actual_price",
+        # Cluster profile.
+        st.markdown("#### Segment characteristics")
+
+        profile_cols = [
+            "actual_price", "discounted_price",
             "discount_percentage", "rating", "rating_count"
         ]
-        profile = sample_df.groupby("Cluster")[cols].median()
-        profile["Product count"] = sample_df.groupby("Cluster").size()
 
-        st.subheader("Median feature values per cluster")
-        st.dataframe(profile.round(2), use_container_width=True)
+        profile = df.groupby("Cluster")[profile_cols].median()
+        profile["Product count"] = df.groupby("Cluster").size()
 
-        st.bar_chart(sample_df["Cluster"].value_counts().sort_index())
+        profile.index = [
+            f"Segment {i + 1}" for i in profile.index
+        ]
 
-        note(
-            "Compare median prices, discounts, ratings, and review counts "
-            "to describe the type of products in each cluster."
+        st.dataframe(
+            profile.round(2),
+            use_container_width=True
         )
 
-    with tabs[3]:
-        st.dataframe(metrics.round(4), use_container_width=True)
+        st.markdown("#### How was the segment calculated?")
+
+        st.write(
+            "1. Price and review-count values are log-transformed to "
+            "reduce skew from very large values."
+        )
+        st.write(
+            "2. Missing feature values are filled using column medians."
+        )
+        st.write(
+            "3. Features are standardized so values with large numeric "
+            "ranges do not dominate the distance calculation."
+        )
+        st.write(
+            "4. K-Means assigns products to the nearest cluster center "
+            "and updates the centers to reduce within-cluster distances."
+        )
+
+        st.latex(
+            r"J = \sum_{i=1}^{n}"
+            r"\left\|x_i-\mu_{c_i}\right\|^2"
+        )
+
+        st.caption(
+            "The objective minimizes the sum of squared distances "
+            "between each product and its assigned cluster center."
+        )
+
+    # Always show clustering comparison, even before product search.
+    st.divider()
+    st.subheader("Clustering evaluation")
+
+    if not comparison.empty:
+        st.dataframe(
+            comparison.round(4),
+            use_container_width=True
+        )
+
+        st.caption(
+            "Metrics are calculated on a representative sample. "
+            "Higher Silhouette and Calinski–Harabasz scores and lower "
+            "Davies–Bouldin scores are generally preferable, but they "
+            "should be interpreted together."
+        )
 
         fig, ax = plt.subplots()
-        ax.bar(metrics["Algorithm"], metrics["Silhouette"])
+        ax.bar(
+            comparison["Algorithm"],
+            comparison["Silhouette"]
+        )
         ax.set_ylabel("Silhouette score")
         ax.set_title("Clustering configuration comparison")
         ax.tick_params(axis="x", rotation=20)
+        fig.tight_layout()
+
         st.pyplot(fig)
         plt.close(fig)
-
-    with tabs[4]:
-        st.markdown("""
-        **Features used:** log-transformed actual price, selling price,
-        discount percentage, rating, and log-transformed review count.
-
-        **Preprocessing:** missing values are filled using feature medians,
-        then features are standardized.
-
-        **K-Means:** starts with cluster centers and assigns products to
-        the nearest center. It updates the centers and repeats until
-        assignments stabilize.
-
-        **Agglomerative Clustering:** starts with individual products
-        and repeatedly merges nearby groups using Ward linkage.
-
-        **Important limitation:** this dataset describes product attributes
-        and review counts. It does not contain historical measurements
-        by date, so these clusters do not predict future product trends.
-        """)
+    else:
+        st.warning("Unable to calculate clustering comparison metrics.")
 
 
-# --------------------------------------------------
-# NAVIGATION
-# --------------------------------------------------
+# =========================================================
+# APP NAVIGATION
+# =========================================================
 with st.sidebar:
     st.title("📊 ML Capstone Studio")
-    st.caption("Review 2 · Interactive dashboard")
+    st.caption("Review 2 · Interactive ML Dashboard")
+
     page = st.radio(
-        "Choose a module",
-        ["Overview", "Regression", "Classification", "Amazon Clustering"]
+        "Explore",
+        [
+            "Overview",
+            "Regression",
+            "Classification",
+            "Amazon Product Analysis"
+        ]
     )
 
 if page == "Overview":
-    st.markdown(
-        '<div class="hero"><h1>Machine Learning Capstone Studio</h1>'
-        '<p>Predict, classify, cluster, and understand the calculations.</p></div>',
-        unsafe_allow_html=True
+    hero(
+        "Machine Learning Capstone Studio",
+        "Explore predictions, understand calculations, and visualize data."
     )
 
     a, b, c = st.columns(3)
-    a.metric("ML tasks", "3")
-    b.metric("Supervised tasks", "2")
-    c.metric("Unsupervised tasks", "1")
+    a.metric("ML Tasks", "3")
+    b.metric("Supervised Learning", "2")
+    c.metric("Unsupervised Learning", "1")
 
-    st.subheader("Explore the dashboard")
-    st.write("🌾 **Regression:** estimate crop yield using KNN.")
-    st.write("🚘 **Classification:** classify vehicle size using Gradient Boosting.")
-    st.write("🛍️ **Clustering:** explore Amazon product segments.")
-    st.info("Select a task in the sidebar to enter details and view predictions.")
+    st.markdown("### Explore your project")
+
+    st.write(
+        "**🌾 Crop Yield Prediction** — Estimate crop yield "
+        "from the selected input features."
+    )
+    st.write(
+        "**🚘 Vehicle Classification** — Predict a vehicle category "
+        "and inspect classification performance."
+    )
+    st.write(
+        "**🛍️ Amazon Product Analysis** — Find products, inspect "
+        "their segments, and explore price, rating, and discount patterns."
+    )
+
+    st.info(
+        "Choose a section from the sidebar to begin."
+    )
 
 elif page == "Regression":
     try:
         regression_page()
     except Exception as e:
-        st.error("Regression could not be loaded.")
+        st.error("Unable to load regression.")
         st.exception(e)
 
 elif page == "Classification":
     try:
         classification_page()
     except Exception as e:
-        st.error("Classification could not be loaded.")
+        st.error("Unable to load classification.")
         st.exception(e)
 
 else:
     try:
         clustering_page()
     except Exception as e:
-        st.error("Amazon clustering could not be loaded.")
+        st.error("Unable to load Amazon product analysis.")
         st.exception(e)
