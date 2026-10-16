@@ -57,7 +57,7 @@ def prepare_amazon():
 
 @st.cache_resource
 def train_regression():
-    df = load_data("Crop Yeild Data.csv")
+    df = load_data("Crop Yield Data.csv")
     target = "Yield"
 
     X = df.drop(columns=[target, "Production"], errors="ignore")
