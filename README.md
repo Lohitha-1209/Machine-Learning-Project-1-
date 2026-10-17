@@ -137,3 +137,77 @@ Gradient Boosting (Accuracy 0.97, Weighted F1 0.97, ROC-AUC 0.995)
 - Matplotlib
 - Seaborn
 - Jupyter Notebook
+
+# Amazon Product Segmentation Using Machine Learning Clustering
+
+## Project Overview
+
+This project applies two unsupervised clustering algorithms to group Amazon India
+products into segments based on price, discount depth, rating and customer engagement,
+and compares them using standard cluster-validation metrics.
+
+## Dataset
+
+The dataset contains information about:
+
+- Product ID, name and category
+- Discounted price and actual price
+- Discount percentage
+- Rating and rating count
+- Product description
+- User ID, user name, review ID, review title and review content
+- Image and product links
+
+The file has 1,465 rows (one per customer review). After keeping one row per product,
+1,351 unique products remain.
+
+## Problem Statement
+
+Products on Amazon differ widely in price level, discounting and customer engagement,
+and there are no labels that say which products behave alike.
+
+The objective of this project is to discover natural product segments without labels
+and to compare K-Means and Agglomerative Hierarchical Clustering using the same
+features and validation metrics.
+
+## Target Variable
+
+None (unsupervised). The retail category is not used for fitting; it is used only
+afterwards to validate the clusters.
+
+Clustering features (standardised):
+
+- `log_actual_price`
+- `discount_percentage_clean`
+- `rating_clean`
+- `log_rating_count`
+
+## Clustering Algorithms
+
+1. K-Means Clustering
+2. Agglomerative Hierarchical Clustering
+
+## Evaluation Metrics
+
+- Silhouette Score
+- Davies-Bouldin Index
+- Calinski-Harabasz Index
+- Elbow Curve (K-Means) and Dendrogram (Hierarchical)
+- PCA 2D and t-SNE cluster visualisation
+
+## Best Model
+
+K-Means with k = 4 (Silhouette 0.2343, Davies-Bouldin 1.2947, Calinski-Harabasz 390.63)
+
+## Tools Used
+
+- Python
+- Pandas
+- NumPy
+- Scikit-learn
+- SciPy
+- Matplotlib
+- Seaborn
+- Jupyter Notebook
+
+streamlit app link : https://mlteam9.streamlit.app/
