@@ -1,5 +1,10 @@
 # Machine-Learning-Project
 
+![](https://img.shields.io/badge/-23CSE301-gold) ![](https://img.shields.io/badge/-Machine_Learning-gold) ![](https://img.shields.io/badge/-Capstone_Project-gold) <br/>
+![](https://img.shields.io/badge/Team_no-<9>-purple)
+![](https://img.shields.io/badge/Track-Regression-blue) ![](https://img.shields.io/badge/Track-Classification-blue) ![](https://img.shields.io/badge/Track-Clustering-blue) <br/>
+![](https://img.shields.io/badge/Focus-Crop_Yield_Prediction-teal) ![](https://img.shields.io/badge/Focus-Vehicle_Size_Classification-teal) ![](https://img.shields.io/badge/Focus-Product_Segmentation-teal) <br/>
+
 # Crop Yield Prediction Using Machine Learning Regression
 
 ## Project Overview
